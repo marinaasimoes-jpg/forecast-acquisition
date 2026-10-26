@@ -4,12 +4,15 @@
 Roda antes de exibir e a cada atualização. Retorna lista de verificações,
 cada uma (id, status 'ok'|'warn', mensagem, deals_envolvidos).
 
-v2: assinatura run(negociacao, ativacao, incompletos, meses, fetched_deals,
-hoje) — espelha calc_forecast.calcular_todos. Verificações novas:
+v2: assinatura run(negociacao, ativacao, rampagem, incompletos, meses,
+fetched_deals, hoje) — espelha calc_forecast.calcular_todos (5-tuple c/ rampagem).
+Verificações novas:
   5.6 Ativação encontrada nos 3 pipelines.
   5.7 Nenhum deal aparece ao mesmo tempo em Negociação e Ativação.
   5.8 Consolidado = soma das duas abas, mês a mês.
   5.9 Teste fictício da rampa de Ativação.
+  5.10 Rampagem: pipeline Retention configurado, RAMP UP encontrado,
+      nenhum overlap Ativação↔Rampagem, consolidado soma 3 abas.
 """
 import datetime as dt
 
@@ -25,13 +28,14 @@ def _warn(msg, deals=None):
     return "warn", msg, deals or []
 
 
-def run(negociacao, ativacao, incompletos, meses, fetched_deals, hoje=None):
+def run(negociacao, ativacao, rampagem, incompletos, meses, fetched_deals, hoje=None):
     """fetched_deals: lista bruta de deals retornados do HubSpot (antes do split).
+    rampagem: deals do stage RAMP UP do pipeline B2B Retention (aba Rampagem).
     Retorna lista de (id, status, mensagem, deals_envolvidos)."""
     if hoje is None:
         hoje = dt.date.today()
     checks = []
-    todos = negociacao + ativacao + incompletos
+    todos = negociacao + ativacao + rampagem + incompletos
 
     # ---- 5.1 Estrutura ----
     for pid, plabel in config.PIPELINES.items():
@@ -286,6 +290,41 @@ def run(negociacao, ativacao, incompletos, meses, fetched_deals, hoje=None):
                                         "dias_ativacao divergente do original.", bad_dias))
     else:
         checks.append(("5.11",) + _ok("dias_ativacao preservado entre Ativação original e 15%."))
+
+    # ---- 5.10 Rampagem (spec aba Rampagem / verif. v3) ----
+    checks.append(("5.10",) +
+                  _ok(f"Pipeline B2B Retention (id {config.PIPELINE_B2B_RETENTION}) "
+                      f"configurado p/ Rampagem."))
+    sid_ramp = config.STAGES_RAMPAGEM[config.PIPELINE_B2B_RETENTION][0]
+    tem_ramp = any(d["stage_id"] == sid_ramp for d in fetched_deals)
+    if tem_ramp:
+        checks.append(("5.10",) +
+                      _ok(f"Rampagem: {len(rampagem)} deal(s) no stage RAMP UP "
+                          f"({sid_ramp})."))
+    else:
+        checks.append(("5.10",) +
+                      _warn("Nenhum deal no stage RAMP UP (pode estar vazio)."))
+    # 5.10b nenhum deal em Rampagem E Ativação ao mesmo tempo
+    ids_ramp = {d["deal_id"] for d in rampagem}
+    ids_ativ = {d["deal_id"] for d in ativacao}
+    dup_ra = ids_ramp & ids_ativ
+    if not dup_ra:
+        checks.append(("5.10",) +
+                      _ok("Nenhum deal aparece ao mesmo tempo em Ativação e Rampagem."))
+    else:
+        checks.append(("5.10",) +
+                      _warn(f"{len(dup_ra)} deal(s) em Ativação E Rampagem "
+                            f"(deveriam migrar, não duplicar).",
+                            [d for d in fetched_deals if d["deal_id"] in dup_ra]))
+    # 5.10c Consolidado = soma das três abas, mês a mês
+    for m in meses:
+        vn = sum(d["volumes"].get(m, 0) for d in negociacao)
+        va = sum(d["volumes"].get(m, 0) for d in ativacao)
+        vr = sum(d["volumes"].get(m, 0) for d in rampagem)
+        checks.append(("5.10",) +
+                      _ok(f"Consolidado {m.strftime('%b/%y')}: "
+                          f"neg={int(vn)} + ativ={int(va)} + ramp={int(vr)} "
+                          f"= {int(vn+va+vr)}."))
 
     return checks
 
