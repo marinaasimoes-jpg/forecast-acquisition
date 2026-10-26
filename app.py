@@ -109,8 +109,8 @@ def main():
 
     st.title("Monthly Commercial Planning")
     st.caption(
-        "Deals em **Negociação** (etapas 4/5/6) e **Ativação** (etapa 7) dos "
-        "pipelines B2B Outbound, Website Table e CSM Acquisition. "
+        "Deals em **Negociação** (etapas 4/5/6), **Ativação** (etapa 7) e "
+        "**Rampagem** (stage RAMP UP do pipeline B2B Retention). "
         "Volume de corridas previsto por mês (rampagem)."
     )
 
