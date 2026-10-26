@@ -580,6 +580,118 @@ def _calc_ativacao_15_safe(ativacao, meses, hoje):
         raise RuntimeError(msg) from e
 
 
+# ---- Rampagem Potencial Atualizado (aba: forecast sobre 15% do potencial) --
+# Espelha calcular_ativacao_15, mas usa volume_por_mes_rampagem (rampa desde a
+# data_ativacao = entrada no RAMP UP). Mesma reavaliação de curva pelo pot15.
+def calcular_rampagem_15(rampagem, meses, hoje):
+    """Variante de Rampagem com forecast baseado em 15% do potencial.
+
+    Mesma rampa desde a data_ativacao (entrada no RAMP UP), mesma
+    proporcionalidade de M1 por dia e mesmo carry-forward de meses anteriores
+    à janela. Só a BASE de volume muda: potencial_15 = round(potencial*0.15).
+    Curva REAVALIADA por potencial_15 (corte 20k agora se aplica a potencial*0.15).
+    potencial ORIGINAL preservado em d["potencial"]; dias_rampagem preservado
+    (depende só da data_ativacao, inalterado).
+    """
+    out = []
+    for d in rampagem:
+        pot_original = d["potencial"] or 0
+        pot15 = int(round(pot_original * 0.15))
+        # volume_por_mes_rampagem lê deal["potencial"] + deal["data_ativacao"];
+        # sobrescrever potencial força a curva/_curva a usar pot15.
+        deal_15 = {**d, "potencial": pot15}
+        vols, entrada, det = volume_por_mes_rampagem(deal_15, meses, hoje)
+        total_linha = sum(vols.values())
+        out.append({**d,                      # preserva potencial ORIGINAL + dias_rampagem
+                    "potencial_15": pot15,
+                    "entrada_rampagem": entrada,
+                    "volumes": vols,
+                    "detalhes": det,
+                    "total_linha": total_linha})
+    return out
+
+
+def _calc_rampagem_15_safe(rampagem, meses, hoje):
+    """Wrapper de diagnóstico para calcular_rampagem_15 (espelha o de Ativação).
+
+    O Streamlit Cloud redacta a msg de exceção no traceback público; este
+    wrapper captura, acha o deal ofensor e re-lança RuntimeError com msg
+    DESCritiva (nome do deal + campos + tipo do erro original) — sem token,
+    legível no UI do Cloud. Em caminho feliz = idêntico a calcular_rampagem_15.
+    """
+    try:
+        return calcular_rampagem_15(rampagem, meses, hoje)
+    except Exception as e:
+        offenders = []
+        for d in rampagem:
+            try:
+                pot = d["potencial"] or 0
+                pot15 = int(round(pot * 0.15))
+                deal_15 = {**d, "potencial": pot15}
+                volume_por_mes_rampagem(deal_15, meses, hoje)
+            except Exception as e2:
+                offenders.append(
+                    f"deal {d.get('dealname')!r} "
+                    f"(deal_id={d.get('deal_id')!r}, step={d.get('step')!r}, "
+                    f"potencial={d.get('potencial')!r}, "
+                    f"data_ativacao={d.get('data_ativacao')!r}) -> "
+                    f"{type(e2).__name__}: {e2}")
+        msg = (f"[diag calcular_rampagem_15] erro original: "
+               f"{type(e).__name__}: {e}. ")
+        if offenders:
+            msg += "Deal(s) ofensor(es): " + " | ".join(offenders[:3])
+        else:
+            msg += ("Nenhum deal individual quebrou (erro coletivo ou na "
+                    "serialização/cache).")
+        raise RuntimeError(msg) from e
+
+
+# ---- Teste de sanidade: Rampagem (spec aba Rampagem) ---------------------
+def sanity_test_rampagem(hoje=None):
+    """Valida a rampa de Rampagem (espelha sanity_test_ativacao).
+
+    Cenários (deal fictício em Rampagem, entrada = data_ativacao):
+      1) 10k entrando HOJE (no mês atual) -> M1 = 10000*0.25*fator, M2=5000, M3+=10000.
+      2) 10k entrou há 3 meses -> mês atual já em 100% (offset >= 2 => 100%).
+      3) 30k entrando hoje -> curva 4 meses: M1=25%*fator, M2=15000, M3=22500, M4=30000.
+
+    Retorna lista de (descricao, esperado, volumes_calculados_por_mes, ok).
+    """
+    if hoje is None:
+        hoje = dt.date.today()
+    meses = meses_janela(hoje)
+
+    def run(potencial, data_ativacao):
+        d = {"potencial": potencial, "data_ativacao": data_ativacao,
+             "step": 8, "dealname": "fictício"}
+        vols, entrada, det = volume_por_mes_rampagem(d, meses, hoje)
+        return [vols[m] for m in meses], entrada
+
+    dm_atual = calendar.monthrange(hoje.year, hoje.month)[1]
+    dias_ativos = dm_atual - hoje.day + 1
+    fator = dias_ativos / dm_atual
+
+    out = []
+    # 1) 10k entrando HOJE
+    v, _ = run(10000, hoje)
+    esp_m1 = 10000 * 0.25 * fator
+    out.append(("10k entrada hoje (mês atual)",
+                {"m1": esp_m1, "m2": 5000, "m3": 10000},
+                v, abs(v[0] - esp_m1) < 1 and abs(v[1] - 5000) < 1))
+    # 2) 10k entrou há 3 meses -> 100% hoje
+    tres_meses_atras = _add_meses(hoje, -3)
+    v2, _ = run(10000, tres_meses_atras)
+    out.append(("10k entrada há 3 meses (100% hoje)",
+                {"m0": 10000}, v2, abs(v2[0] - 10000) < 1))
+    # 3) 30k entrando hoje -> curva 4 meses
+    v3, _ = run(30000, hoje)
+    esp_m1b = 30000 * 0.25 * fator
+    out.append(("30k entrada hoje (curva 4 meses)",
+                {"m1": esp_m1b, "m2": 15000, "m3": 22500, "m4": 30000},
+                v3, abs(v3[0] - esp_m1b) < 1 and abs(v3[1] - 15000) < 1))
+    return out
+
+
 # ---- Teste de sanidade (spec 5.5) ---------------------------------------
 def sanity_test_deals(hoje=None):
     """Deals fictícios p/ validar a lógica (não entram nos totais).
