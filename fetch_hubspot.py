@@ -146,33 +146,10 @@ def _fetch_rampagem(modified_since=None):
     """Busca TODOS os deals do stage RAMP UP do pipeline B2B Retention.
     Espelha _fetch_pipeline, mas com filtro direto no stage_id (sem o
     dict PIPELINES, que é só dos 3 de aquisição). Retorna lista de deals raw."""
-    filters = [
-        {"value": config.PIPELINE_B2B_RETENTION,
-         "propertyName": "pipeline", "operator": "EQ"},
-        {"values": [config.STAGE_RAMP_UP],
-         "propertyName": "dealstage", "operator": "IN"},
-    ]
-    if modified_since is not None:
-        filters.append({"value": str(modified_since),
-                        "propertyName": config.PROP_LASTMOD, "operator": "GTE"})
-    body = {
-        "filterGroups": [{"filters": filters}],
-        "properties": config.DEAL_PROPERTIES,
-        "limit": config.PAGE_SIZE,
-    }
     raw, after = [], None
     while True:
-        if after is not None:
-            body["after"] = int(after)
-        for _ in range(5):
-            r = requests.post(f"{config.BASE}/crm/v3/objects/deals/search",
-                              headers=_headers(), json=body, timeout=60)
-            if r.status_code == 429:
-                time.sleep(int(r.headers.get("Retry-After", "10")) + 1)
-                continue
-            r.raise_for_status()
-            page = r.json()
-            break
+        page = _search_page([config.STAGE_RAMP_UP], config.PIPELINE_B2B_RETENTION,
+                            after, modified_since)
         raw.extend(page.get("results", []))
         after = page.get("paging", {}).get("next", {}).get("after")
         if not after:
