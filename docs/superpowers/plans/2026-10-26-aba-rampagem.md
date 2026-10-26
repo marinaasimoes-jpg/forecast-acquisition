@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Token:** `HUBSPOT_TOKEN` via env var or Streamlit Cloud secret ONLY. Never hardcoded. Run `git grep -n "pat-na1"` (and `pat-na1-abfbac1b`) before every commit — only allowed match is the placeholder `pat-na1-seu-token-aqui` in `config.py:56`.
+- **Token:** `HUBSPOT_TOKEN` via env var or Streamlit Cloud secret ONLY. Never hardcoded. Run `git grep -n "pat-na1"` (and `pat-na1-<redacted>`) before every commit — only allowed match is the placeholder `pat-na1-seu-token-aqui` in `config.py:56`.
 - **IDs are discovered, never assumed:** `PIPELINE_B2B_RETENTION = "922791528"`, `STAGE_RAMP_UP = "1412072536"`, `PROP_DATA_ATIVACAO_RAMPAGEM = "hs_v2_date_entered_1412072536"`. All validated against the HubSpot API on 2026-10-26.
 - **Run all Python with `PYTHONUTF8=1`** on Windows (BR-locale data with accents).
 - **Curva is fixed:** `<20k → [0.25, 0.5, 1.0]`; `≥20k → [0.25, 0.5, 0.75, 1.0]` (`config.CURVA_RAMPAGEM`, cutoff `LIMITE_POTENCIAL_ALTO = 20000`). Reuse `_curva`, do not redefine.
@@ -1276,7 +1276,7 @@ Expected: `app.py imports OK` + 4 function checks `OK`. (If `import app` trigger
 
 Run:
 ```bash
-cd "G:/Drives compartilhados/B2B Planning (Sales Ops & Intelligence)/4. Planning/Marina/Rampagem/dash forecast acquisition" && git grep -n "pat-na1-abfbac1b" -- . && echo "!!! LEAK" || echo "clean"
+cd "G:/Drives compartilhados/B2B Planning (Sales Ops & Intelligence)/4. Planning/Marina/Rampagem/dash forecast acquisition" && git grep -n "pat-na1-<redacted>" -- . && echo "!!! LEAK" || echo "clean"
 ```
 Expected: `clean`.
 
@@ -1310,7 +1310,7 @@ Expected: 0 exceptions; 6 rampagem deals; sanity OK; duplicidade 0; selfcheck 5.
 
 Run:
 ```bash
-cd "G:/Drives compartilhados/B2B Planning (Sales Ops & Intelligence)/4. Planning/Marina/Rampagem/dash forecast acquisition" && (git grep -n "pat-na1-abfbac1b" -- . && echo "!!! LEAK — NÃO PUSH" || echo "✓ clean")
+cd "G:/Drives compartilhados/B2B Planning (Sales Ops & Intelligence)/4. Planning/Marina/Rampagem/dash forecast acquisition" && (git grep -n "pat-na1-<redacted>" -- . && echo "!!! LEAK — NÃO PUSH" || echo "✓ clean")
 ```
 Expected: `✓ clean`.
 
