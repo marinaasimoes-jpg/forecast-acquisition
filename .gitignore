@@ -4,3 +4,6 @@ _streamlit.log
 _schema_discovered.json
 _*.log
 .streamlit/secrets.toml
+
+# SDD scratch (process artifacts — reports/ledgers/diffs, not source)
+.superpowers/
