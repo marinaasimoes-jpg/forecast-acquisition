@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dashboard de Forecast de Aquisição — v2 (spec 2026-10-15).
+"""Monthly Commercial Planning — v2 (spec 2026-10-15).
 
 Três abas:
   1. Negociação — deals nas etapas 4/5/6 (ainda não assinaram).
@@ -99,13 +99,13 @@ def get_data():
 
 
 def main():
-    st.set_page_config(page_title="Forecast de Aquisição", layout="wide",
+    st.set_page_config(page_title="Monthly Commercial Planning", layout="wide",
                        initial_sidebar_state="expanded")
 
     # CSS mínimo: visual limpo (spec C). Sem bordas pesadas, espaçamento uniforme.
     st.markdown(_CSS(), unsafe_allow_html=True)
 
-    st.title("Forecast de Aquisição")
+    st.title("Monthly Commercial Planning")
     st.caption(
         "Deals em **Negociação** (etapas 4/5/6) e **Ativação** (etapa 7) dos "
         "pipelines B2B Outbound, Website Table e CSM Acquisition. "

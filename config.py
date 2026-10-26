@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Configuração do Dashboard de Forecast de Aquisição.
+"""Configuração do Monthly Commercial Planning.
 
 Escopo: SOMENTE clientes que ainda NÃO assinaram contrato — deals nas
 etapas 4 (Solução), 5 (Negociação) e 6 (Fechamento) dos pipelines B2B

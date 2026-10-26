@@ -1,4 +1,4 @@
-# Dashboard de Forecast de Aquisição
+# Monthly Commercial Planning
 
 Forecast de volume de corridas por mês (próximos 6 meses) dos clientes em
 **Negociação** (etapas 4/5/6 — ainda não assinaram) e em **Ativação**
