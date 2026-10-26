@@ -142,6 +142,22 @@ def _fetch_pipeline(pid, plabel, stage_ids, modified_since=None):
     return pid, plabel, raw
 
 
+def _fetch_rampagem(modified_since=None):
+    """Busca TODOS os deals do stage RAMP UP do pipeline B2B Retention.
+    Espelha _fetch_pipeline, mas com filtro direto no stage_id (sem o
+    dict PIPELINES, que é só dos 3 de aquisição). Retorna lista de deals raw."""
+    raw, after = [], None
+    while True:
+        page = _search_page([config.STAGE_RAMP_UP], config.PIPELINE_B2B_RETENTION,
+                            after, modified_since)
+        raw.extend(page.get("results", []))
+        after = page.get("paging", {}).get("next", {}).get("after")
+        if not after:
+            break
+        time.sleep(0.2)
+    return raw
+
+
 def _build_deal(d, owners, plabel_default, hoje_date):
     p = d.get("properties", {})
     oid = _val(p.get("hubspot_owner_id"))
@@ -154,6 +170,9 @@ def _build_deal(d, owners, plabel_default, hoje_date):
     potencial = _parse_potencial(_val(p.get(config.PROP_POTENCIAL)))
     # closedate = data real de fechamento; proxy da entrada na Ativação (D.1).
     closedate = _parse_hs_date(_val(p.get(config.PROP_CLOSEDATE)))
+    # Data de ativação = entrada no stage RAMP UP (hs_v2_date_entered_*).
+    # Só populado p/ deals do Retention/RAMP UP; None nos demais.
+    data_ativacao = _parse_hs_date(_val(p.get(config.PROP_DATA_ATIVACAO_RAMPAGEM)))
     lastmod = _parse_hs_date(_val(p.get(config.PROP_LASTMOD)))
     pid = _val(p.get("pipeline"))
     return {
@@ -168,6 +187,7 @@ def _build_deal(d, owners, plabel_default, hoje_date):
         "owner_full": owner_full or "",
         "previsao_fechamento": previsao,
         "closedate": closedate,
+        "data_ativacao": data_ativacao,
         "potencial": potencial,
         "lastmodified": lastmod,
         # atrasado só faz sentido para Negociação (4/5/6 com previsão no passado)
@@ -202,6 +222,12 @@ def fetch_deals(log=print, modified_since=None, hoje_date=None):
             for d in raw:
                 deals.append(_build_deal(d, owners, plabel, hoje_date))
             log(f"  {plabel}: {len(raw)} deals.")
+
+    # ---- Aba Rampagem: RAMP UP do B2B Retention (pipeline separado) ----
+    raw_ramp = _fetch_rampagem(ms)
+    for d in raw_ramp:
+        deals.append(_build_deal(d, owners, "B2B Retention", hoje_date))
+    log(f"  B2B Retention (RAMP UP): {len(raw_ramp)} deals.")
 
     fetched_at = dt.datetime.now()
     return deals, owners, fetched_at

@@ -96,6 +96,20 @@ STAGES_ATIVACAO = {
     "927024659": ("1420435115", 7, "7. Ativação"),
 }
 
+# ---- Aba Rampagem: pipeline B2B Retention, stage RAMP UP (spec aba Rampagem)
+# Descoberto em 2026-10-26 pelo label exato (discover_schema + probe direto).
+# Clientes JÁ em rampa (ativaram, subindo a curva). Fronteira: o deal migra do
+# stage 7 "Ativação" (aquisição) p/ o stage RAMP UP (Retention) ao iniciar a rampa.
+# hs_v2_date_entered_<stage_id> É retornável pela CRM API v3 (diferente do
+# hs_date_entered_<id> v1, que NÃO é) — populado em 6/6 deals em 2026-10-26.
+PIPELINE_B2B_RETENTION = "922791528"
+STAGES_RAMPAGEM = {
+    "922791528": ("1412072536", 8, "RAMP UP"),
+}
+STAGE_RAMP_UP = "1412072536"   # stage id do RAMP UP no B2B Retention
+PROP_DATA_ATIVACAO_RAMPAGEM = "hs_v2_date_entered_1412072536"
+PROP_DATA_ATIVACAO_RAMPAGEM_LABEL = "Data de entrada no Ramp Up"
+
 # Todos os stage_ids alvo: 4/5/6 (Negociação) + 7 Ativação. A aba Ativação
 # entra na MESMA consulta da Search API (filtro IN com todos os stages),
 # sem consulta extra por pipeline — spec "Desempenho".
@@ -107,6 +121,7 @@ ALL_ATIVACAO_STAGE_IDS = [s[0] for s in STAGES_ATIVACAO.values()]
 # Inclui 4/5/6 (Negociação) e 7 (Ativação).
 STAGE_BY_ID = {s[0]: (s[1], s[2]) for stages in STAGES.values() for s in stages}
 STAGE_BY_ID.update({s[0]: (s[1], s[2]) for s in STAGES_ATIVACAO.values()})
+STAGE_BY_ID.update({s[0]: (s[1], s[2]) for s in STAGES_RAMPAGEM.values()})
 
 # Propriedade de potencial confirmada por probe_potencial.py em 2026-10-01:
 # share_vs_potencial_total (label "Potencial Mês (Total)") é número absoluto
@@ -134,6 +149,7 @@ PROP_PREVISAO_LABEL = "Previsão de Fechamento"
 DEAL_PROPERTIES = [
     "dealname", "dealstage", "pipeline", "hubspot_owner_id",
     PROP_PREVISAO, PROP_POTENCIAL, "closedate", "hs_lastmodifieddate",
+    PROP_DATA_ATIVACAO_RAMPAGEM,
 ]
 PROP_LASTMOD = "hs_lastmodifieddate"
 PROP_CLOSEDATE = "closedate"   # data real de fechamento (proxy entrada Ativação)

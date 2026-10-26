@@ -17,8 +17,8 @@ print("Buscando deals (4/5/6 + 7 Ativação, paralelo)...")
 deals, owners, fetched_at = fh.fetch_deals(log=print)
 print(f"Total: {len(deals)} deals | fetched_at: {fetched_at.isoformat()}\n")
 
-neg, ativ, inc, meses = cf.calcular_todos(deals, hoje=HOJE)
-print(f"Negociacao: {len(neg)} | Ativacao: {len(ativ)} | Incompletos: {len(inc)}")
+neg, ativ, ramp, inc, meses = cf.calcular_todos(deals, hoje=HOJE)
+print(f"Negociacao: {len(neg)} | Ativacao: {len(ativ)} | Rampagem: {len(ramp)} | Incompletos: {len(inc)}")
 print(f"Janela: {[m.strftime('%b/%y') for m in meses]}\n")
 
 # ---- regra 2.1 atrasados (Negociação) ----
@@ -140,23 +140,76 @@ for m in meses:
 t6a = sum(d["total_linha"] for d in ativ_15)
 print(f"  {'TOTAL':8s} 15%={int(t6a):>10,}")
 
+# ---- RAMPAGEM (stage RAMP UP do B2B Retention) ----
+print("\n" + "=" * 70)
+print("RAMPAGEM (rampa desde data_ativacao = entrada no RAMP UP):")
+print("=" * 70)
+for d in ramp:
+    v = [int(d["volumes"][m]) for m in meses]
+    print(f"  {d['dealname'][:28]!r:30s} pipe={d['pipeline_label'][:18]:18s} "
+          f"entrada={d['entrada_rampagem']} dias={d['dias_rampagem']} "
+          f"pot={d['potencial']} total6m={int(d['total_linha'])}")
+    print(f"     meses: {v}")
+print(f"  ... total em rampagem: {len(ramp)}\n")
+
+# ---- sanity test Rampagem ----
+print("=" * 70)
+print("SANITY TEST Rampagem (deals fictícios):")
+print("=" * 70)
+for desc, esp, v, ok in cf.sanity_test_rampagem(hoje=HOJE):
+    print(f"  {desc}: {[int(x) for x in v]} -> {'OK' if ok else 'FALHOU'}")
+
+# ---- duplicidade Ativação x Rampagem (esperado 0) ----
+print()
+print("=" * 70)
+print("DUPLICIDADE Ativação x Rampagem (esperado 0):")
+print("=" * 70)
+ids_ativ = {d["deal_id"] for d in ativ}
+ids_ramp = {d["deal_id"] for d in ramp}
+dup_ar = ids_ativ & ids_ramp
+print(f"  {len(dup_ar)} deal(s) em ambas as abas.")
+
+# ---- aba Rampagem Potencial Atualizado (forecast sobre 15%) ----
+print("\n" + "=" * 70)
+print("RAMPAGEM POTENCIAL ATUALIZADO (forecast sobre 15%):")
+print("=" * 70)
+ramp_15 = cf._calc_rampagem_15_safe(ramp, meses, HOJE)
+pot_orig_r = sum((d["potencial"] or 0) for d in ramp_15)
+pot15_r = sum(d["potencial_15"] for d in ramp_15)
+print(f"  Deals: {len(ramp_15)} | potencial original: {pot_orig_r:,} -> "
+      f"15%: {pot15_r:,} | total 6m: {int(sum(d['total_linha'] for d in ramp_15)):,}")
+for d in ramp_15:
+    v = [int(d["volumes"][m]) for m in meses]
+    print(f"  {d['dealname'][:28]!r:30s} pot={d['potencial']:>7,} "
+          f"-> 15%={d['potencial_15']:>6,} dias={d.get('dias_rampagem',0):>3} "
+          f"total6m={int(d['total_linha']):>8,}")
+    print(f"     meses: {v}")
+print(f"  ... total deals 15% ramp: {len(ramp_15)}\n")
+print("  TOTAL por mês (aba Rampagem 15%):")
+for m in meses:
+    t = sum(d["volumes"][m] for d in ramp_15)
+    print(f"  {m.strftime('%b/%y'):8s} 15%={int(t):>10,}")
+t6r = sum(d["total_linha"] for d in ramp_15)
+print(f"  {'TOTAL':8s} 15%={int(t6r):>10,}")
+
 # ---- self-check ----
 print("\n" + "=" * 70)
 print("SELF-CHECK:")
 print("=" * 70)
-checks = sc.run(neg, ativ, inc, meses, deals, hoje=HOJE)
+checks = sc.run(neg, ativ, ramp, inc, meses, deals, hoje=HOJE)
 print(f"  {sc.summary(checks)}")
 for cid, st, msg, dl in checks:
     if st == "warn":
         print(f"  ⚠ [{cid}] {msg} ({len(dl)} deals)")
 
-# ---- total consolidado ----
+# ---- total consolidado (Negociação + Ativação + Rampagem) ----
 print("\n" + "=" * 70)
-print("TOTAL por mês (Negociação + Ativação):")
+print("TOTAL por mês (Negociação + Ativação + Rampagem):")
 print("=" * 70)
 for m in meses:
     tn = sum(d['volumes'][m] for d in neg)
     ta = sum(d['volumes'][m] for d in ativ)
-    print(f"  {m.strftime('%b/%y'):8s} neg={int(tn):>10,} ativ={int(ta):>8,} soma={int(tn+ta):>10,}")
-tn6 = sum(d['total_linha'] for d in neg); ta6 = sum(d['total_linha'] for d in ativ)
-print(f"  {'TOTAL':8s} neg={int(tn6):>10,} ativ={int(ta6):>8,} soma={int(tn6+ta6):>10,}")
+    tr = sum(d['volumes'][m] for d in ramp)
+    print(f"  {m.strftime('%b/%y'):8s} neg={int(tn):>10,} ativ={int(ta):>8,} ramp={int(tr):>10,} soma={int(tn+ta+tr):>10,}")
+tn6 = sum(d['total_linha'] for d in neg); ta6 = sum(d['total_linha'] for d in ativ); tr6 = sum(d['total_linha'] for d in ramp)
+print(f"  {'TOTAL':8s} neg={int(tn6):>10,} ativ={int(ta6):>8,} ramp={int(tr6):>10,} soma={int(tn6+ta6+tr6):>10,}")
