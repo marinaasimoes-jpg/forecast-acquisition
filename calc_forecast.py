@@ -277,36 +277,131 @@ def dias_em_ativacao(closedate, hoje):
     return max(0, (hoje - closedate).days)
 
 
+# ---- Rampagem (aba Rampagem) ---------------------------------------------
+# Cliente JÁ em rampa (stage RAMP UP do B2B Retention). A rampa começa na
+# data de entrada no stage = hs_v2_date_entered_1412072536 (prop
+# data_ativacao, populada no fetch). Espelha volume_por_mes_ativacao: mesma
+# curva, mesma proporcionalidade de M1 por dia, mesmo carry-forward de meses
+# anteriores à janela. Única diferença: a data-base é data_ativacao, NÃO
+# closedate (fechamento ≠ entrada na rampa — um deal pode ficar semanas no
+# stage 7 "Ativação" antes de migrar p/ RAMP UP).
+def volume_por_mes_rampagem(deal, meses, hoje):
+    """Calcula volumes + metadados por mês da janela p/ um deal em Rampagem.
+
+    Retorna (volumes, entrada, detalhes). entrada = data_ativacao (início da
+    rampa = entrada no stage RAMP UP).
+    """
+    detalhes = {m: {"texto": "–", "rampa_idx": None, "frac": 0.0, "fator": None}
+                for m in meses}
+    volumes = {m: 0.0 for m in meses}
+
+    potencial = deal["potencial"]
+    entrada = deal.get("data_ativacao")   # data de entrada no RAMP UP
+    if not potencial or potencial <= 0 or not entrada:
+        return volumes, None, detalhes
+
+    curva = _curva(potencial)
+    fator_m1, dias_ativos, dias_no_mes = _fator_proporcional(entrada)
+    mes_m1 = dt.date(entrada.year, entrada.month, 1)
+
+    # Se o M1 (mês da entrada) está ANTES da janela, a rampa já começou no
+    # passado: descobrir qual offset da curva cai no primeiro mês da janela.
+    if mes_m1 not in volumes:
+        delta_meses = (meses[0].year - mes_m1.year) * 12 + (meses[0].month - mes_m1.month)
+        if delta_meses < 0:
+            # entrada futura além da janela -> nada a exibir ainda
+            return volumes, entrada, detalhes
+        idx_m1 = 0
+        offset_inicial = delta_meses   # já estamos offset meses adentro da rampa
+    else:
+        idx_m1 = meses.index(mes_m1)
+        offset_inicial = 0
+
+    for i in range(idx_m1, len(meses)):
+        offset = offset_inicial + (i - idx_m1)
+        mes = meses[i]
+        if offset < len(curva):
+            frac = curva[offset]
+            if offset == 0:
+                # M1 cai DENTRO da janela -> proporcional por dia
+                vol = potencial * frac * fator_m1
+                texto = (f"Mês 1 (entrada) · 25% de {potencial:,} × "
+                         f"{dias_ativos}/{dias_no_mes} (fator {fator_m1:.3f}) "
+                         f"= {int(round(vol)):,}")
+            else:
+                vol = potencial * frac
+                nome_mes = {1: "Mês 1", 2: "Mês 2", 3: "Mês 3",
+                            4: "Mês 4"}.get(offset + 1, f"Mês {offset+1}")
+                texto = f"{nome_mes} · {int(frac*100)}% de {potencial:,} = {int(round(vol)):,}"
+            volumes[mes] += vol
+            detalhes[mes] = {"texto": texto, "rampa_idx": offset, "frac": frac,
+                             "fator": fator_m1 if offset == 0 else None}
+        else:
+            vol = potencial * 1.0
+            texto = f"Mês {len(curva)+1}+ (100%) · 100% de {potencial:,} = {int(round(vol)):,}"
+            volumes[mes] += vol
+            detalhes[mes] = {"texto": texto, "rampa_idx": len(curva),
+                             "frac": 1.0, "fator": None}
+    return volumes, entrada, detalhes
+
+
+def dias_em_rampagem(data_ativacao, hoje):
+    """Dias decorridos desde a entrada no RAMP UP. >=0."""
+    if not data_ativacao:
+        return None
+    return max(0, (hoje - data_ativacao).days)
+
+
 def calcular_todos(deals, hoje=None):
-    """Particiona deals em (negociacao, ativacao, incompletos) e calcula volumes.
+    """Particiona deals em (negociacao, ativacao, rampagem, incompletos) e
+    calcula volumes.
 
     - negociacao: deals nas etapas 4/5/6 (rampa desde a ativação = fechamento+5dúteis).
     - ativacao:   deals na etapa 7 Ativação (rampa desde o closedate, sem +5dúteis).
+    - rampagem:   deals no stage RAMP UP do B2B Retention (rampa desde a
+                  data_ativacao = entrada no RAMP UP, sem +5dúteis).
     - incompletos: faltando potencial ou a data base da sua aba.
 
     Camada 2 (cálculo) — independente da renderização (spec 4.1).
-    Retorna (negociacao, ativacao, incompletos, meses).
+    Retorna (negociacao, ativacao, rampagem, incompletos, meses).
     """
     if hoje is None:
         hoje = dt.date.today()
     meses = meses_janela(hoje)
 
-    negociacao, ativacao, incompletos = [], [], []
+    negociacao, ativacao, rampagem, incompletos = [], [], [], []
     for d in deals:
         step = d.get("step")
         eh_ativacao = step == 7
+        eh_rampagem = step == 8
         tem_pot = d["potencial"] is not None and d["potencial"] > 0
-        # data base de cada aba: closedate p/ Ativação, previsao p/ Negociação
-        tem_data_base = (d.get("closedate") is not None) if eh_ativacao \
-            else (d.get("previsao_fechamento") is not None)
+        # data base de cada aba:
+        #   closedate p/ Ativação; data_ativacao p/ Rampagem;
+        #   previsao_fechamento p/ Negociação.
+        if eh_rampagem:
+            tem_data_base = d.get("data_ativacao") is not None
+        elif eh_ativacao:
+            tem_data_base = d.get("closedate") is not None
+        else:
+            tem_data_base = d.get("previsao_fechamento") is not None
         if not (tem_pot and tem_data_base):
+            origem = ("rampagem" if eh_rampagem
+                      else ("ativacao" if eh_ativacao else "negociacao"))
             incompletos.append({**d, "ativacao": None, "base_fechamento": None,
                                 "atrasado": False, "volumes": {m: 0.0 for m in meses},
                                 "detalhes": {}, "total_linha": 0,
-                                "origem": "ativacao" if eh_ativacao else "negociacao",
-                                "motivo_incompleto": _motivo_incompleto(d, eh_ativacao)})
+                                "origem": origem,
+                                "motivo_incompleto": _motivo_incompleto(d, eh_ativacao, eh_rampagem)})
             continue
-        if eh_ativacao:
+        if eh_rampagem:
+            vols, entrada, det = volume_por_mes_rampagem(d, meses, hoje)
+            total_linha = sum(vols.values())
+            rampagem.append({**d, "entrada_rampagem": entrada,
+                             "ativacao": None, "base_fechamento": None,
+                             "atrasado": False, "volumes": vols, "detalhes": det,
+                             "total_linha": total_linha, "origem": "rampagem",
+                             "dias_rampagem": dias_em_rampagem(entrada, hoje)})
+        elif eh_ativacao:
             vols, entrada, det = volume_por_mes_ativacao(d, meses, hoje)
             total_linha = sum(vols.values())
             ativacao.append({**d, "entrada_ativacao": entrada,
@@ -321,12 +416,15 @@ def calcular_todos(deals, hoje=None):
                                "atrasado": atrasado, "volumes": vols, "detalhes": det,
                                "total_linha": total_linha, "origem": "negociacao",
                                "dias_atraso": dias_atraso(d["previsao_fechamento"], hoje) if atrasado else 0})
-    return negociacao, ativacao, incompletos, meses
+    return negociacao, ativacao, rampagem, incompletos, meses
 
 
-def _motivo_incompleto(d, eh_ativacao=False):
+def _motivo_incompleto(d, eh_ativacao=False, eh_rampagem=False):
     faltam = []
-    if eh_ativacao:
+    if eh_rampagem:
+        if not d.get("data_ativacao"):
+            faltam.append("data de ativação (entrada no Ramp Up)")
+    elif eh_ativacao:
         if not d.get("closedate"):
             faltam.append("data de fechamento (entrada na Ativação)")
     else:
