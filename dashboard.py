@@ -840,12 +840,6 @@ def render_lente(lente, key_prefix):
         key_prefix, todos_deals, todos_owners, todos_pipes, todos_steps,
         fetched_at)
 
-    # ---- seleciona as listas da lente ----
-    if lente == "total":
-        L_neg, L_ativ, L_ramp = neg, ativ, ramp
-    else:  # lente == "15"
-        L_neg, L_ativ, L_ramp = neg_15, ativ_15, ramp_15
-
     # ---- aplica filtros (igual ao main atual) ----
     neg_sel_base = aplica_filtros(neg, f_pipe, f_owner)
     if f_step:

@@ -6,6 +6,28 @@ Forecast de volume de corridas por mês (próximos 6 meses) dos clientes em
 clientes já em rampa, subindo a curva), dos pipelines B2B Outbound, B2B
 Website Table, B2B CSM Acquisition e B2B Retention. Fonte: HubSpot.
 
+## v3 (2026-11-03) — multipage (2 lentes)
+
+O app passou a ser **multipage**: uma home leve (`app.py`) + 2 páginas de
+lente. A home (`app.py`) mostra só título, caption, 2 KPIs ("Deals em
+pipeline" + "Última atualização") e orientação para as lentes — **sem
+filtros**.
+
+- **Potencial Total** (`pages/1_Potencial_Total.py`): forecast sobre o
+  potencial absoluto — abas Negociação, Ativação, Rampagem e Consolidado.
+- **Potencial Atualizado (15%)** (`pages/2_Potencial_15.py`): forecast sobre
+  15% do potencial (curva reavaliada pela base 15%) — mesmas 4 abas.
+- **Modelo B**: cada lente tem seus próprios filtros na sidebar (estado de
+  widget independente entre as duas lentes via chaves prefixadas
+  `total_*` / `p15_*`). A home não tem filtros.
+- Toda a lógica compartilhada (cache, filtros, render) está em
+  `dashboard.py`; as páginas são wrappers finos que chamam
+  `render_lente(lente, key_prefix)`.
+- Consolidado 15% reusa `_render_consolidado` (funções agnósticas à lente —
+  operam sobre `volumes`/`total_linha`, presentes nos dicts 15%).
+- Lógica de negócio (`config`, `fetch_hubspot`, `calc_forecast`, `theme`,
+  `selfcheck`) inalterada.
+
 ## v2 (2026-10-15) — o que mudou
 
 - **7 abas**: Negociação (4/5/6), Negociação Potencial atualizado (15%),
@@ -42,7 +64,9 @@ Os dados ficam em cache 15 min; botões **🔄 Atualizar agora**
 
 | Arquivo | Papel |
 |---|---|
-| `app.py` | App Streamlit: 7 abas, filtros, `st.dataframe` nativo + `column_config`, totais, gráfico. |
+| `app.py` | Home leve (multipage raiz): título, caption, KPIs, orientação para as 2 lentes. |
+| `dashboard.py` | Camada compartilhada: cache (`get_data`), `_render_filtros` (sidebar prefixada por key_prefix), `render_lente(lente, key_prefix)`, todos `_render_*`/`_df_*`/`_CSS`. |
+| `pages/` | Wrappers finos: `1_Potencial_Total.py` e `2_Potencial_15.py` chamam `render_lente` com sua lente e `key_prefix`. |
 | `fetch_hubspot.py` | Search API dos stages 4/5/6 + 7 Ativação dos 3 pipelines (mesma consulta) + stage RAMP UP do B2B Retention + Owners API. |
 | `calc_forecast.py` | Negociação: ativação +5dúteis, proporcionalidade M1, curva, janela. Ativação: rampa desde `closedate`. Rampagem: rampa desde `hs_v2_date_entered_*`. Variantes 15% (`_15`) p/ cada categoria. |
 | `config.py` | IDs descobertos (4/5/6 + 7 Ativação + RAMP UP), propriedades, regras de cálculo. |
