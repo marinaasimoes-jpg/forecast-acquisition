@@ -755,3 +755,154 @@ def _CSS():
         vertical-align:middle; margin-right:4px; }
     </style>
     """
+
+
+# ---- orquestração de lente (Total / 15%) ---------------------------------
+def _render_filtros(key_prefix, todos_deals, todos_owners, todos_pipes,
+                    todos_steps, fetched_at):
+    """Sidebar de filtros + botões + checkboxes, parametrizada por key_prefix.
+
+    Modelo B: cada página de lente chama com key_prefix distinto ("total" /
+    "p15") → estado de widget totalmente independente entre as duas lentes.
+
+    Retorna (f_pipe, f_owner, f_step, dark, agrupar).
+    """
+    with st.sidebar:
+        st.header("Filtros")
+        f_pipe = st.multiselect("Pipeline", todos_pipes,
+                                key=f"{key_prefix}_pipe")
+        f_owner = st.multiselect("Proprietário", todos_owners,
+                                 key=f"{key_prefix}_owner")
+        f_step = st.multiselect("Etapa (só Negociação)",
+                                [f"Etapa {s}" for s in todos_steps],
+                                key=f"{key_prefix}_step")
+        if st.button("🧹 Limpar filtros", key=f"{key_prefix}_limpar"):
+            for k in (f"{key_prefix}_pipe", f"{key_prefix}_owner",
+                      f"{key_prefix}_step"):
+                st.session_state.pop(k, None)
+            st.rerun()
+        st.divider()
+        col_btn1, col_btn2 = st.columns(2)
+        if col_btn1.button("🔄 Atualizar agora",
+                           help="Atualização incremental (spec 4.4)",
+                           key=f"{key_prefix}_atualizar"):
+            st.session_state.fc_data = _load_incremental_v2(fetched_at.isoformat())
+            st.rerun()
+        if col_btn2.button("♻️ Recarregar tudo", help="Carga completa",
+                           key=f"{key_prefix}_recarregar"):
+            st.cache_data.clear()
+            st.session_state.pop("fc_data", None)
+            st.rerun()
+        st.divider()
+        agrupar = st.checkbox(
+            "Agrupar por pipeline", value=False,
+            help="Quando desligado (padrão), a ordenação por clique é global.",
+            key=f"{key_prefix}_agrupar")
+        dark = st.checkbox("Modo escuro", value=False,
+                           key=f"{key_prefix}_dark")
+    return f_pipe, f_owner, f_step, dark, agrupar
+
+
+def render_lente(lente, key_prefix):
+    """Renderiza uma lente inteira (Total ou 15%).
+
+    lente: "total" → usa neg/ativ/ramp + _render_consolidado(total).
+           "15"   → usa neg_15/ativ_15/ramp_15 + _render_consolidado(15)
+                    (reuso puro — _render_consolidado é agnóstica à lente).
+    key_prefix: prefixo das chaves de widget ("total" / "p15") — Modelo B,
+                estado de filtro independente entre as duas páginas.
+    """
+    if lente not in ("total", "15"):
+        raise ValueError(f"lente deve ser 'total' ou '15', veio {lente!r}")
+
+    neg, ativ, ramp, inc, meses, fetched_at, hoje, fetched_deals, \
+        neg_15, ativ_15, ramp_15 = get_data()
+
+    # ---- self-check (spec 5) ---- roda antes de exibir
+    checks = sc.run(neg, ativ, ramp, inc, meses, fetched_deals, hoje)
+    st.markdown(f"**Verificação:** {sc.summary(checks)}")
+    with st.expander("Verificação dos dados (detalhado)", expanded=False):
+        for cid, status, msg, deals_inv in checks:
+            icon = "✓" if status == "ok" else "⚠"
+            st.markdown(f"- **{icon}** [{cid}] {msg}" +
+                        (f"  \n  _Deals:_ {', '.join(d['dealname'] for d in deals_inv[:5])}"
+                         + (f" … (+{len(deals_inv)-5})" if len(deals_inv) > 5 else "")
+                         if deals_inv else ""))
+
+    # ---- filtros (spec A) — só camada 3, sobre o cache ----
+    todos_deals = neg + ativ + ramp
+    todos_owners = sorted({d["owner_name"] for d in todos_deals
+                           if d["owner_name"] != "(sem proprietário)"})
+    todos_pipes = sorted({d["pipeline_label"] for d in todos_deals})
+    todos_steps = sorted({d["step"] for d in neg if d["step"]})
+
+    f_pipe, f_owner, f_step, dark, agrupar = _render_filtros(
+        key_prefix, todos_deals, todos_owners, todos_pipes, todos_steps,
+        fetched_at)
+
+    # ---- seleciona as listas da lente ----
+    if lente == "total":
+        L_neg, L_ativ, L_ramp = neg, ativ, ramp
+    else:  # lente == "15"
+        L_neg, L_ativ, L_ramp = neg_15, ativ_15, ramp_15
+
+    # ---- aplica filtros (igual ao main atual) ----
+    neg_sel_base = aplica_filtros(neg, f_pipe, f_owner)
+    if f_step:
+        nums = [int(s.split()[-1]) for s in f_step]
+        neg_sel_base = [d for d in neg_sel_base if d["step"] in nums]
+    ativ_sel_base = aplica_filtros(ativ, f_pipe, f_owner)
+    ramp_sel_base = aplica_filtros(ramp, f_pipe, f_owner)
+
+    # A lente 15% espelha os mesmos deals filtrados da lente total
+    # (mesmos deal_ids sob os filtros), via _filtrar_paralelo.
+    if lente == "total":
+        neg_sel, ativ_sel, ramp_sel = neg_sel_base, ativ_sel_base, ramp_sel_base
+    else:
+        neg_sel = _filtrar_paralelo(neg_15, neg_sel_base)
+        ativ_sel = _filtrar_paralelo(ativ_15, ativ_sel_base)
+        ramp_sel = _filtrar_paralelo(ramp_15, ramp_sel_base)
+
+    _sort_padrao(neg_sel)
+    _sort_padrao(ativ_sel)
+    _sort_padrao(ramp_sel)
+
+    # ---- abas: 4 (3 categorias da lente + Consolidado) ----
+    if lente == "total":
+        nomes = ["Negociação", "Ativação", "Rampagem", "Consolidado"]
+    else:
+        nomes = ["Negociação 15%", "Ativação 15%", "Rampagem 15%",
+                 "Consolidado 15%"]
+    tab_neg, tab_ativ, tab_ramp, tab_cons = st.tabs(nomes)
+
+    with tab_neg:
+        if lente == "total":
+            _render_negociacao(neg_sel, inc, meses, fetched_at, dark, agrupar)
+        else:
+            _render_negociacao_15(neg_sel, inc, meses, fetched_at, dark, agrupar)
+    with tab_ativ:
+        if lente == "total":
+            _render_ativacao(ativ_sel, inc, meses, fetched_at, dark, agrupar)
+        else:
+            _render_ativacao_15(ativ_sel, inc, meses, fetched_at, dark, agrupar)
+    with tab_ramp:
+        if lente == "total":
+            _render_rampagem(ramp_sel, inc, meses, fetched_at, dark, agrupar)
+        else:
+            _render_rampagem_15(ramp_sel, inc, meses, fetched_at, dark, agrupar)
+    with tab_cons:
+        # _render_consolidado é agnóstica à lente: opera sobre volumes/
+        # total_linha, que existem nos dicts 15% no mesmo formato.
+        _render_consolidado(neg_sel, ativ_sel, ramp_sel, meses, dark)
+
+    base_15 = " (forecast sobre 15% do potencial)" if lente == "15" else ""
+    st.caption(
+        f"Fonte: HubSpot (pipelines B2B Outbound/Website Table/CSM Acquisition). "
+        f"Potencial: `{config.PROP_POTENCIAL_LABEL}`{base_15}. "
+        f"Negociação: ativação = fechamento + 5 dias úteis (feriados BR). "
+        f"Ativação: rampa desde o fechamento real (`closedate`). "
+        f"Rampagem: rampa desde a entrada no stage RAMP UP (`hs_v2_date_entered_*`). "
+        f"Curva <20k: 25/50/100 · ≥20k: 25/50/75/100. "
+        f"Probabilidade 100% (não pondera etapa). "
+        f"Última atualização: {fetched_at.strftime('%d/%m/%Y %H:%M')}."
+    )
