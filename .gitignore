@@ -7,3 +7,6 @@ _*.log
 
 # SDD scratch (process artifacts — reports/ledgers/diffs, not source)
 .superpowers/
+
+# Playwright MCP scratch (browser snapshots/console logs from smoke tests)
+.playwright-mcp/
