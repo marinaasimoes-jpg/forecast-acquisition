@@ -167,3 +167,18 @@ CURVA_RAMPAGEM = {
     "high": [0.25, 0.50, 0.75, 1.00],      # potencial >= 20.000
 }
 LIMITE_POTENCIAL_ALTO = 20000
+
+# ---- Acompanhamento meta vs. realizado (Fase 2) -------------------------
+# Planilha com o realizado mensal por empresa (colado manualmente a cada mês,
+# uma aba "Acompanhamento Linda MMaaaa" por mês). Commitada no repo em data/
+# pra o Streamlit Cloud ter acesso (o Cloud não enxerga o Drive local).
+PATH_PLANILHA_PERFORMANCE = "data/Acompanhamento_Rampagem.xlsx"
+
+# Exceções de match: quando o nome na planilha não casa com o dealname do
+# HubSpot por normalização textual, mapeia manualmente aqui.
+# Chave = nome na planilha (Company Name); valor = dealname no HubSpot.
+# Cresce conforme aparecerem "Deals sem acompanhamento" no dashboard.
+EXCECOES_MATCH_NOME = {
+    "Voetur": "Grupo Voetur",
+    # "Dellys": "Dellys Food Service",  # este casa por normalização, não precisa
+}
