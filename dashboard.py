@@ -308,12 +308,17 @@ def _render_rampagem_15(sel, incompletos, meses, fetched_at, dark, agrupar,
     _linha_total(df, meses, label="TOTAL")
 
     _incompletos_expander(inc_ramp, aba="rampagem", dark=dark)
-    _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark)
+    _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark, eh_15=True)
     _sem_acompanhamento_expander(perf_sem, sel, dark)
 
 
-def _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark):
-    """Expander com histórico mês a mês (meta | realizado | %) por deal."""
+def _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark, eh_15=False):
+    """Expander com histórico mês a mês (meta | realizado | %) por deal.
+
+    Quando eh_15=True, a meta de cada mês é calculada sobre potencial_15
+    (lente Potencial Atualizado): troca 'potencial' por potencial_15 antes
+    de chamar meta_de_mes_rampagem. O realizado vem da planilha (igual nas
+    duas lentes)."""
     deals_com_hist = [d for d in sel
                       if d["deal_id"] in perf_por_deal and perf_por_deal[d["deal_id"]]]
     if not deals_com_hist:
@@ -323,11 +328,12 @@ def _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark):
         for d in deals_com_hist:
             perf = perf_por_deal[d["deal_id"]]
             st.markdown(f"**{d['dealname']}**")
+            deal_meta = _deal_para_meta_15(d) if eh_15 else d
             rows = []
             for mes in sorted(perf.keys()):
                 reg = perf[mes]
                 real = reg["realizado"]
-                meta = cf.meta_de_mes_rampagem(d, mes)
+                meta = cf.meta_de_mes_rampagem(deal_meta, mes)
                 pct = (real / meta * 100) if (real is not None and meta > 0) else None
                 rows.append({"Mês": mes_label(mes),
                              "Meta": fmt_int(meta),
@@ -532,13 +538,27 @@ def _df_ativacao_15(sel, meses):
     return df
 
 
-def _acompanhamento_dal(deal, perf_por_deal, perf_mes_corr):
+def _deal_para_meta_15(deal):
+    """Para a lente 15%: devolve um deal-view com 'potencial' trocado por
+    potencial_15, pra que meta_de_mes_rampagem calcule a meta sobre 15%.
+    O realizado (na planilha) é o mesmo; só a meta (denominador do %) muda."""
+    pot15 = deal.get("potencial_15")
+    if pot15 is None:
+        return deal
+    return {**deal, "potencial": pot15}
+
+
+def _acompanhamento_dal(deal, perf_por_deal, perf_mes_corr, eh_15=False):
     """Devolve (pct_int, real_int) do mês corrente para o deal.
 
     pct = realizado / meta_de_mes_rampagem(deal, perf_mes_corr) * 100.
     Retorna (None, None) quando sem performance/mês corrente → exibidos
     como '–' (NaN via Int64Dtype). (None, int) quando meta=0 (só realizado).
-    """
+
+    Quando eh_15=True, a meta é calculada sobre potencial_15 (lente
+    Potencial Atualizado): troca 'potencial' por potencial_15 antes de
+    chamar meta_de_mes_rampagem. O realizado vem da planilha (igual nas
+    duas lentes)."""
     if perf_mes_corr is None:
         return None, None
     perf = perf_por_deal.get(deal["deal_id"], {})
@@ -546,7 +566,8 @@ def _acompanhamento_dal(deal, perf_por_deal, perf_mes_corr):
     if reg is None or reg["realizado"] is None:
         return None, None
     real = reg["realizado"]
-    meta = cf.meta_de_mes_rampagem(deal, perf_mes_corr)
+    deal_meta = _deal_para_meta_15(deal) if eh_15 else deal
+    meta = cf.meta_de_mes_rampagem(deal_meta, perf_mes_corr)
     if meta <= 0:
         return None, int(round(real))
     pct = (real / meta) * 100
@@ -596,8 +617,8 @@ def _df_rampagem_15(sel, meses, perf_por_deal, perf_mes_corr):
     Igual ao _df_rampagem, mas com a coluna "15% potencial" posicionada entre
     "Potencial" e "TOTAL 6M". "Potencial" mostra o ORIGINAL; meses e TOTAL 6M
     refletem o forecast sobre 15%. O acompanhamento (% / Realizado) usa
-    meta_de_mes_rampagem sobre o potencial_15 (o deal desta variante tem
-    potencial=potencial_15)."""
+    meta_de_mes_rampagem sobre potencial_15 (via _acompanhamento_dal com
+    eh_15=True, que troca 'potencial' por potencial_15 só no cálculo da meta)."""
     data = {
         "Nome do negócio": [], "% atingimento": [], "Realizado": [],
         "Pipeline": [], "Proprietário": [],
@@ -608,7 +629,7 @@ def _df_rampagem_15(sel, meses, perf_por_deal, perf_mes_corr):
         data[mes_label(m)] = []
     for d in sel:
         data["Nome do negócio"].append(d["dealname"])
-        pct, real = _acompanhamento_dal(d, perf_por_deal, perf_mes_corr)
+        pct, real = _acompanhamento_dal(d, perf_por_deal, perf_mes_corr, eh_15=True)
         data["% atingimento"].append(pct)
         data["Realizado"].append(real)
         data["Pipeline"].append(d["pipeline_label"])
