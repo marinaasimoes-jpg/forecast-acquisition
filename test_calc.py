@@ -265,3 +265,39 @@ assert cf.meta_de_mes_rampagem({"potencial": None, "data_ativacao": dt.date(2026
 assert cf.meta_de_mes_rampagem({"potencial": 1000, "data_ativacao": None}, dt.date(2026,2,1)) == 0
 print("  sem potencial / sem data: 0  OK")
 print("  meta_de_mes_rampagem: 8/8 OK\n")
+
+# ---- fetch_performance (Fase 2: planilha real) ----
+print("=" * 70)
+print("FETCH_PERFORMANCE (planilha real data/):")
+print("=" * 70)
+import fetch_performance as fp
+
+regs = fp.ler_performance()
+print(f"  registros lidos: {len(regs)}")
+for r in regs[:5]:
+    print(f"    {r['empresa_planilha']!r} mes={r['mes'].isoformat()} "
+          f"meta={r['meta_planilha']} real={r['realizado']}")
+assert len(regs) > 0, "nenhum registro lido da planilha"
+# agosto deve estar presente (aba Acompanhamento Linda 082026)
+agos = [r for r in regs if r["mes"].month == 8]
+assert len(agos) > 0, "nenhum registro de agosto"
+print(f"  registros de agosto: {len(agos)}")
+
+# normalizar_nome
+assert fp.normalizar_nome("Dellys Food Service") == "dellys"
+assert fp.normalizar_nome("  VOETUR ") == "voetur"
+print("  normalizar_nome: 2/2 OK")
+
+# performance_por_deal com deals dummy
+dummies = [
+    {"deal_id": "d1", "dealname": "Dellys Food Service"},
+    {"deal_id": "d2", "dealname": "Grupo Voetur"},
+    {"deal_id": "d3", "dealname": "Empresa Que Nao Esta Na Planilha"},
+]
+por_deal, mes_corr, sem = fp.performance_por_deal(dummies, regs)
+print(f"  casados: {list(por_deal.keys())}  mes_corrente: {mes_corr}  sem: {[d['dealname'] for d in sem]}")
+assert "d1" in por_deal, "Dellys deveria casar por normalização"
+assert "d2" in por_deal, "Grupo Voetur deveria casar via EXCECOES_MATCH_NOME"
+assert any(d["deal_id"] == "d3" for d in sem), "d3 deveria estar sem acompanhamento"
+print("  performance_por_deal: 3/3 OK")
+print("  fetch_performance: OK\n")
