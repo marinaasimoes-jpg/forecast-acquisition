@@ -213,3 +213,55 @@ for m in meses:
     print(f"  {m.strftime('%b/%y'):8s} neg={int(tn):>10,} ativ={int(ta):>8,} ramp={int(tr):>10,} soma={int(tn+ta+tr):>10,}")
 tn6 = sum(d['total_linha'] for d in neg); ta6 = sum(d['total_linha'] for d in ativ); tr6 = sum(d['total_linha'] for d in ramp)
 print(f"  {'TOTAL':8s} neg={int(tn6):>10,} ativ={int(ta6):>8,} ramp={int(tr6):>10,} soma={int(tn6+ta6+tr6):>10,}")
+
+# ---- meta_de_mes_rampagem (Fase 2: meta de qualquer mês) ----
+print("=" * 70)
+print("META_DE_MES_RAMPAGEM:")
+print("=" * 70)
+import calc_forecast as cf
+import datetime as dt
+
+# Deal high (potencial >= 20k): curva [0.25, 0.50, 0.75, 1.00]
+deal_high = {"deal_id": "t1", "potencial": 30000,
+             "data_ativacao": dt.date(2026, 7, 15)}
+# M1 = mês da entrada (jul/2026), proporcional por dia.
+# entrada 15/7 → dias_ativos = 31-15+1 = 17, dias_no_mes=31 → fator 17/31.
+m1 = cf.meta_de_mes_rampagem(deal_high, dt.date(2026, 7, 1))
+esperado_m1 = 30000 * 0.25 * (17 / 31)
+print(f"  high M1 (jul/26, entrada 15/7): {m1:.1f}  esperado {esperado_m1:.1f}")
+assert abs(m1 - esperado_m1) < 1, f"M1 high: {m1} != {esperado_m1}"
+
+# M2 = ago/2026 → 50% de 30000 = 15000 (sem proporcionalidade).
+m2 = cf.meta_de_mes_rampagem(deal_high, dt.date(2026, 8, 1))
+assert abs(m2 - 15000) < 1, f"M2 high: {m2} != 15000"
+print(f"  high M2 (ago/26): {m2:.1f}  esperado 15000")
+
+# M5+ = após a curva (high tem 4 meses) → 100% = 30000.
+m5 = cf.meta_de_mes_rampagem(deal_high, dt.date(2026, 12, 1))
+assert abs(m5 - 30000) < 1, f"M5+ high: {m5} != 30000"
+print(f"  high M5+ (dez/26): {m5:.1f}  esperado 30000")
+
+# Mês ANTES da entrada → meta 0.
+m_antes = cf.meta_de_mes_rampagem(deal_high, dt.date(2026, 6, 1))
+assert m_antes == 0, f"antes entrada: {m_antes} != 0"
+print(f"  high antes entrada (jun/26): {m_antes}  esperado 0")
+
+# Deal low (potencial < 20k): curva [0.25, 0.50, 1.00] (3 meses)
+deal_low = {"deal_id": "t2", "potencial": 500,
+            "data_ativacao": dt.date(2026, 8, 11)}
+# M3 = out/2026 → 100% de 500 = 500.
+m3_low = cf.meta_de_mes_rampagem(deal_low, dt.date(2026, 10, 1))
+assert abs(m3_low - 500) < 1, f"M3 low: {m3_low} != 500"
+print(f"  low M3 (out/26): {m3_low:.1f}  esperado 500")
+
+# Variante 15%: passa deal com potencial_15.
+deal_high_15 = {**deal_high, "potencial": 4500}  # 15% de 30000 = 4500
+m2_15 = cf.meta_de_mes_rampagem(deal_high_15, dt.date(2026, 8, 1))
+assert abs(m2_15 - 2250) < 1, f"M2 15%: {m2_15} != 2250"
+print(f"  15% M2 (ago/26, pot=4500): {m2_15:.1f}  esperado 2250")
+
+# Sem potencial ou sem data_ativacao → 0.
+assert cf.meta_de_mes_rampagem({"potencial": None, "data_ativacao": dt.date(2026,1,1)}, dt.date(2026,2,1)) == 0
+assert cf.meta_de_mes_rampagem({"potencial": 1000, "data_ativacao": None}, dt.date(2026,2,1)) == 0
+print("  sem potencial / sem data: 0  OK")
+print("  meta_de_mes_rampagem: 8/8 OK\n")

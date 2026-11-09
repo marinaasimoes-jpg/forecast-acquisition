@@ -345,6 +345,46 @@ def volume_por_mes_rampagem(deal, meses, hoje):
     return volumes, entrada, detalhes
 
 
+def meta_de_mes_rampagem(deal, mes_alvo):
+    """Meta de forecast de rampagem para um mês qualquer (dentro ou fora da
+    janela de 6 meses). Reusa _curva + _fator_proporcional.
+
+    mes_alvo: date (primeiro dia do mês). Retorna float (meta sobre o
+    potencial do deal passado — potencial total OU potencial_15, conforme a
+    lente: a lente 15% passa um deal cujo "potencial" já é o 15%).
+
+    Casos:
+    - Sem potencial / sem data_ativacao → 0.
+    - mes_alvo anterior ao mês da entrada → 0 (rampa ainda não começou).
+    - M1 (mês da entrada) → potencial * curva[0] * fator_proporcional.
+    - M2..N dentro da curva → potencial * curva[offset].
+    - Após a curva (carry-forward) → potencial * 1.0 (100%).
+    """
+    potencial = deal.get("potencial")
+    entrada = deal.get("data_ativacao")
+    if not potencial or potencial <= 0 or not entrada:
+        return 0.0
+
+    curva = _curva(potencial)
+    mes_m1 = dt.date(entrada.year, entrada.month, 1)
+    mes_alvo_pri = dt.date(mes_alvo.year, mes_alvo.month, 1)
+
+    # offset em meses desde a entrada (mes_alvo - mes_m1).
+    delta = (mes_alvo_pri.year - mes_m1.year) * 12 + (mes_alvo_pri.month - mes_m1.month)
+    if delta < 0:
+        return 0.0  # antes da entrada
+
+    if delta < len(curva):
+        frac = curva[delta]
+        if delta == 0:
+            # M1: proporcional por dia (entrada no meio do mês).
+            fator_m1, _, _ = _fator_proporcional(entrada)
+            return potencial * frac * fator_m1
+        return potencial * frac
+    # Após a curva: 100% (carry-forward).
+    return potencial * 1.0
+
+
 def dias_em_rampagem(data_ativacao, hoje):
     """Dias decorridos desde a entrada no RAMP UP. >=0."""
     if not data_ativacao:
