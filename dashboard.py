@@ -18,6 +18,7 @@ import streamlit as st
 import config
 import fetch_hubspot as fh
 import calc_forecast as cf
+import fetch_performance
 import selfcheck as sc
 import theme
 
@@ -243,10 +244,12 @@ def _render_ativacao_15(sel, incompletos, meses, fetched_at, dark, agrupar):
 
 
 # ---- renderização: Rampagem (stage RAMP UP do B2B Retention) --------------
-def _render_rampagem(sel, incompletos, meses, fetched_at, dark, agrupar):
+def _render_rampagem(sel, incompletos, meses, fetched_at, dark, agrupar,
+                     perf_por_deal, perf_mes_corr, perf_sem):
     """Espelha _render_ativacao, mas a data-base é a entrada no RAMP UP
     (data_ativacao) e o pipeline é o B2B Retention. Coluna "Data de ativação"
-    no lugar de "Entrada na Ativação"."""
+    no lugar de "Entrada na Ativação". Inclui colunas de acompanhamento
+    (% atingimento, Realizado) + expanders de histórico e sem-acompanhamento."""
     inc_ramp = [d for d in incompletos if d.get("origem", "negociacao") == "rampagem"]
     total_6m = sum(d["total_linha"] for d in sel)
     pot_total = sum((d["potencial"] or 0) for d in sel)
@@ -262,19 +265,24 @@ def _render_rampagem(sel, incompletos, meses, fetched_at, dark, agrupar):
                 f"B2B Retention). Última atualização: "
                 f"{fetched_at.strftime('%d/%m/%Y %H:%M')}._")
 
-    df = _df_rampagem(sel, meses)
+    df = _df_rampagem(sel, meses, perf_por_deal, perf_mes_corr)
     _linha_total(df, meses, label="TOTAL")
     _tabela_principal(df, meses, dark, agrupar, aba="rampagem")
     _linha_total(df, meses, label="TOTAL")
 
     _incompletos_expander(inc_ramp, aba="rampagem", dark=dark)
+    _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark)
+    _sem_acompanhamento_expander(perf_sem, sel, dark)
 
 
 # ---- renderização: Rampagem Potencial Atualizado (forecast sobre 15%) ------
-def _render_rampagem_15(sel, incompletos, meses, fetched_at, dark, agrupar):
+def _render_rampagem_15(sel, incompletos, meses, fetched_at, dark, agrupar,
+                        perf_por_deal, perf_mes_corr, perf_sem):
     """Espelha _render_ativacao_15, mas p/ Rampagem (data-base = entrada no
     RAMP UP). Coluna "15% potencial" à direita de "Potencial"; forecast
-    (meses + TOTAL 6M) baseado em 15%. "Potencial" mostra o ORIGINAL.
+    (meses + TOTAL 6M) baseado em 15%. "Potencial" mostra o ORIGINAL. Inclui
+    colunas de acompanhamento (% atingimento, Realizado sobre a meta 15%) +
+    expanders de histórico e sem-acompanhamento.
     """
     inc_ramp = [d for d in incompletos if d.get("origem", "negociacao") == "rampagem"]
     total_6m = sum(d["total_linha"] for d in sel)
@@ -294,12 +302,54 @@ def _render_rampagem_15(sel, incompletos, meses, fetched_at, dark, agrupar):
         f"15%: {fmt_int(pot_15_total)}. Última atualização: "
         f"{fetched_at.strftime('%d/%m/%Y %H:%M')}._")
 
-    df = _df_rampagem_15(sel, meses)
+    df = _df_rampagem_15(sel, meses, perf_por_deal, perf_mes_corr)
     _linha_total(df, meses, label="TOTAL")
     _tabela_principal(df, meses, dark, agrupar, aba="rampagem_15")
     _linha_total(df, meses, label="TOTAL")
 
     _incompletos_expander(inc_ramp, aba="rampagem", dark=dark)
+    _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark)
+    _sem_acompanhamento_expander(perf_sem, sel, dark)
+
+
+def _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark):
+    """Expander com histórico mês a mês (meta | realizado | %) por deal."""
+    deals_com_hist = [d for d in sel
+                      if d["deal_id"] in perf_por_deal and perf_por_deal[d["deal_id"]]]
+    if not deals_com_hist:
+        return
+    with st.expander(f"📈 Histórico de acompanhamento ({len(deals_com_hist)} deals)",
+                     expanded=False):
+        for d in deals_com_hist:
+            perf = perf_por_deal[d["deal_id"]]
+            st.markdown(f"**{d['dealname']}**")
+            rows = []
+            for mes in sorted(perf.keys()):
+                reg = perf[mes]
+                real = reg["realizado"]
+                meta = cf.meta_de_mes_rampagem(d, mes)
+                pct = (real / meta * 100) if (real is not None and meta > 0) else None
+                rows.append({"Mês": mes_label(mes),
+                             "Meta": fmt_int(meta),
+                             "Realizado": fmt_int(real),
+                             "%": fmt_int(pct) if pct is not None else "–"})
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+            st.markdown("")
+
+
+def _sem_acompanhamento_expander(perf_sem, sel, dark):
+    """Expander com deals em rampa que não casaram com a planilha."""
+    sel_ids = {d["deal_id"] for d in sel}
+    sem = [d for d in perf_sem if d["deal_id"] in sel_ids]
+    if not sem:
+        return
+    with st.expander(f"⚠️ Deals sem acompanhamento na planilha ({len(sem)})",
+                     expanded=False):
+        st.markdown("_Estes deals estão em rampa no HubSpot mas não casaram com "
+                    "nenhuma empresa da planilha. Se devem ter acompanhamento, "
+                    "adicionar o mapeamento em `config.EXCECOES_MATCH_NOME`._")
+        for d in sem:
+            st.markdown(f"- **{d['dealname']}** (deal_id `{d['deal_id']}`)")
 
 
 def _render_consolidado(neg_sel, ativ_sel, ramp_sel, meses, dark):
@@ -482,13 +532,34 @@ def _df_ativacao_15(sel, meses):
     return df
 
 
-def _df_rampagem(sel, meses):
+def _acompanhamento_dal(deal, perf_por_deal, perf_mes_corr):
+    """Devolve (pct_int, real_int) do mês corrente para o deal.
+
+    pct = realizado / meta_de_mes_rampagem(deal, perf_mes_corr) * 100.
+    Retorna (None, None) quando sem performance/mês corrente → exibidos
+    como '–' (NaN via Int64Dtype). (None, int) quando meta=0 (só realizado).
+    """
+    if perf_mes_corr is None:
+        return None, None
+    perf = perf_por_deal.get(deal["deal_id"], {})
+    reg = perf.get(perf_mes_corr)
+    if reg is None or reg["realizado"] is None:
+        return None, None
+    real = reg["realizado"]
+    meta = cf.meta_de_mes_rampagem(deal, perf_mes_corr)
+    if meta <= 0:
+        return None, int(round(real))
+    pct = (real / meta) * 100
+    return int(round(pct)), int(round(real))
+
+
+def _df_rampagem(sel, meses, perf_por_deal, perf_mes_corr):
     """DataFrame da aba "Rampagem". Modelo mínimo + "Data de ativação"
-    (entrada no RAMP UP). Mesmo schema de _df_ativacao, trocando
-    "Entrada na Ativação" -> "Data de ativação" e "Dias em ativação" ->
-    "Dias em rampagem"."""
+    (entrada no RAMP UP) + colunas de acompanhamento (% atingimento,
+    Realizado) após o nome."""
     data = {
-        "Nome do negócio": [], "Pipeline": [], "Proprietário": [],
+        "Nome do negócio": [], "% atingimento": [], "Realizado": [],
+        "Pipeline": [], "Proprietário": [],
         "Data de ativação": [], "Dias em rampagem": [],
         "Potencial": [], "TOTAL 6M": [],
     }
@@ -496,6 +567,10 @@ def _df_rampagem(sel, meses):
         data[mes_label(m)] = []
     for d in sel:
         data["Nome do negócio"].append(d["dealname"])
+        # acompanhamento (Fase 2): % e realizado do mês corrente
+        pct, real = _acompanhamento_dal(d, perf_por_deal, perf_mes_corr)
+        data["% atingimento"].append(pct)
+        data["Realizado"].append(real)
         data["Pipeline"].append(d["pipeline_label"])
         data["Proprietário"].append(d["owner_name"])
         data["Data de ativação"].append(d.get("entrada_rampagem"))
@@ -509,17 +584,23 @@ def _df_rampagem(sel, meses):
         df[mes_label(m)] = df[mes_label(m)].astype(int)
     for c in ("Dias em rampagem", "Potencial", "TOTAL 6M"):
         df[c] = df[c].astype(int)
+    # Realizado / % podem ser None (deals sem performance) → Int64Dtype (nullable).
+    for c in ("% atingimento", "Realizado"):
+        df[c] = df[c].astype(pd.Int64Dtype())
     df["Data de ativação"] = pd.to_datetime(df["Data de ativação"], errors="coerce").dt.date
     return df
 
 
-def _df_rampagem_15(sel, meses):
+def _df_rampagem_15(sel, meses, perf_por_deal, perf_mes_corr):
     """DataFrame da aba "Rampagem Potencial Atualizado".
     Igual ao _df_rampagem, mas com a coluna "15% potencial" posicionada entre
     "Potencial" e "TOTAL 6M". "Potencial" mostra o ORIGINAL; meses e TOTAL 6M
-    refletem o forecast sobre 15%."""
+    refletem o forecast sobre 15%. O acompanhamento (% / Realizado) usa
+    meta_de_mes_rampagem sobre o potencial_15 (o deal desta variante tem
+    potencial=potencial_15)."""
     data = {
-        "Nome do negócio": [], "Pipeline": [], "Proprietário": [],
+        "Nome do negócio": [], "% atingimento": [], "Realizado": [],
+        "Pipeline": [], "Proprietário": [],
         "Data de ativação": [], "Dias em rampagem": [],
         "Potencial": [], "15% potencial": [], "TOTAL 6M": [],
     }
@@ -527,6 +608,9 @@ def _df_rampagem_15(sel, meses):
         data[mes_label(m)] = []
     for d in sel:
         data["Nome do negócio"].append(d["dealname"])
+        pct, real = _acompanhamento_dal(d, perf_por_deal, perf_mes_corr)
+        data["% atingimento"].append(pct)
+        data["Realizado"].append(real)
         data["Pipeline"].append(d["pipeline_label"])
         data["Proprietário"].append(d["owner_name"])
         data["Data de ativação"].append(d.get("entrada_rampagem"))
@@ -541,6 +625,8 @@ def _df_rampagem_15(sel, meses):
         df[mes_label(m)] = df[mes_label(m)].astype(int)
     for c in ("Dias em rampagem", "Potencial", "15% potencial", "TOTAL 6M"):
         df[c] = df[c].astype(int)
+    for c in ("% atingimento", "Realizado"):
+        df[c] = df[c].astype(pd.Int64Dtype())
     df["Data de ativação"] = pd.to_datetime(df["Data de ativação"], errors="coerce").dt.date
     return df
 
@@ -651,11 +737,15 @@ def _tabela_principal(df, meses, dark, agrupar, aba):
         cc["Corridas esperadas mês atual"] = st.column_config.NumberColumn("Corridas esperadas mês atual", format="%d")
         cc["TOTAL 6M"] = st.column_config.NumberColumn("TOTAL 6M", format="%d")
     elif aba == "rampagem":
+        cc["% atingimento"] = st.column_config.NumberColumn("% atingimento", format="%d %%")
+        cc["Realizado"] = st.column_config.NumberColumn("Realizado", format="%d")
         cc["Data de ativação"] = st.column_config.DateColumn("Data de ativação", format="DD/MM/YYYY")
         cc["Dias em rampagem"] = st.column_config.NumberColumn("Dias em rampagem", format="%d")
         cc["Potencial"] = st.column_config.NumberColumn("Potencial", format="%d")
         cc["TOTAL 6M"] = st.column_config.NumberColumn("TOTAL 6M", format="%d")
     elif aba == "rampagem_15":
+        cc["% atingimento"] = st.column_config.NumberColumn("% atingimento", format="%d %%")
+        cc["Realizado"] = st.column_config.NumberColumn("Realizado", format="%d")
         cc["Data de ativação"] = st.column_config.DateColumn("Data de ativação", format="DD/MM/YYYY")
         cc["Dias em rampagem"] = st.column_config.NumberColumn("Dias em rampagem", format="%d")
         cc["Potencial"] = st.column_config.NumberColumn("Potencial", format="%d")
@@ -818,6 +908,16 @@ def render_lente(lente, key_prefix):
     neg, ativ, ramp, inc, meses, fetched_at, hoje, fetched_deals, \
         neg_15, ativ_15, ramp_15 = get_data()
 
+    # ---- acompanhamento (Fase 2): realizado da planilha ----
+    # Carrega uma vez; o realizado é o mesmo nas duas lentes (a meta muda).
+    try:
+        perf_regs = fetch_performance.ler_performance()
+        perf_por_deal, perf_mes_corr, perf_sem = fetch_performance.performance_por_deal(
+            ramp, perf_regs)
+    except Exception as e:
+        perf_por_deal, perf_mes_corr, perf_sem = {}, None, []
+        st.caption(f"⚠ Acompanhamento indisponível ({type(e).__name__}).")
+
     # ---- self-check (spec 5) ---- roda antes de exibir
     checks = sc.run(neg, ativ, ramp, inc, meses, fetched_deals, hoje)
     st.markdown(f"**Verificação:** {sc.summary(checks)}")
@@ -881,9 +981,11 @@ def render_lente(lente, key_prefix):
             _render_ativacao_15(ativ_sel, inc, meses, fetched_at, dark, agrupar)
     with tab_ramp:
         if lente == "total":
-            _render_rampagem(ramp_sel, inc, meses, fetched_at, dark, agrupar)
+            _render_rampagem(ramp_sel, inc, meses, fetched_at, dark, agrupar,
+                             perf_por_deal, perf_mes_corr, perf_sem)
         else:
-            _render_rampagem_15(ramp_sel, inc, meses, fetched_at, dark, agrupar)
+            _render_rampagem_15(ramp_sel, inc, meses, fetched_at, dark, agrupar,
+                                perf_por_deal, perf_mes_corr, perf_sem)
     with tab_cons:
         # _render_consolidado é agnóstica à lente: opera sobre volumes/
         # total_linha, que existem nos dicts 15% no mesmo formato.
