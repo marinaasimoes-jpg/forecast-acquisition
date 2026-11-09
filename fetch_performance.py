@@ -63,35 +63,38 @@ def ler_performance(path=config.PATH_PLANILHA_PERFORMANCE):
     """
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     registros = []
-    for nome_aba in wb.sheetnames:
-        if not nome_aba.lower().startswith("acompanhamento linda"):
-            continue
-        mes = _mes_do_nome_aba(nome_aba)
-        if mes is None:
-            continue
-        ws = wb[nome_aba]
-        rows = list(ws.iter_rows(values_only=True))
-        # linha1 (idx0) = headers; linha2 (idx1) = sub-headers de mês;
-        # dados começam em linha3 (idx2).
-        for r in rows[2:]:
-            if not r or r[1] is None:
+    try:
+        for nome_aba in wb.sheetnames:
+            if not nome_aba.lower().startswith("acompanhamento linda"):
                 continue
-            empresa = str(r[1]).strip()
-            # Actual = col10 (índice 10). Pode ser None ou '#VALUE!'.
-            actual = r[10] if len(r) > 10 else None
-            realizado = None
-            if isinstance(actual, (int, float)) and actual == actual:
-                realizado = float(actual)
-            # Meta planilha = col4 (Forecast do mês da aba). Confiável só
-            # como referência cruzada; a meta "oficial" pro dashboard vem
-            # do calc_forecast (meta_de_mes_rampagem). Guardamos p/ debug.
-            meta_plan = r[4] if len(r) > 4 else None
-            meta_val = None
-            if isinstance(meta_plan, (int, float)) and meta_plan == meta_plan:
-                meta_val = float(meta_plan)
-            registros.append({"empresa_planilha": empresa, "mes": mes,
-                              "meta_planilha": meta_val,
-                              "realizado": realizado})
+            mes = _mes_do_nome_aba(nome_aba)
+            if mes is None:
+                continue
+            ws = wb[nome_aba]
+            rows = list(ws.iter_rows(values_only=True))
+            # linha1 (idx0) = headers; linha2 (idx1) = sub-headers de mês;
+            # dados começam em linha3 (idx2).
+            for r in rows[2:]:
+                if not r or r[1] is None:
+                    continue
+                empresa = str(r[1]).strip()
+                # Actual = col10 (índice 10). Pode ser None ou '#VALUE!'.
+                actual = r[10] if len(r) > 10 else None
+                realizado = None
+                if isinstance(actual, (int, float)) and actual == actual:
+                    realizado = float(actual)
+                # Meta planilha = col4 (Forecast do mês da aba). Confiável só
+                # como referência cruzada; a meta "oficial" pro dashboard vem
+                # do calc_forecast (meta_de_mes_rampagem). Guardamos p/ debug.
+                meta_plan = r[4] if len(r) > 4 else None
+                meta_val = None
+                if isinstance(meta_plan, (int, float)) and meta_plan == meta_plan:
+                    meta_val = float(meta_plan)
+                registros.append({"empresa_planilha": empresa, "mes": mes,
+                                  "meta_planilha": meta_val,
+                                  "realizado": realizado})
+    finally:
+        wb.close()
     return registros
 
 
