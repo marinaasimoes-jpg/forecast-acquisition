@@ -50,12 +50,40 @@ def _client():
     except Exception:
         sa_json = None
     if sa_json:
-        info = json.loads(sa_json) if isinstance(sa_json, str) else sa_json
+        info = _parse_sa_json(sa_json)
         creds = service_account.Credentials.from_service_account_info(info)
     else:
         creds = service_account.Credentials.from_service_account_file(
             config.BQ_CRED_PATH)
     return bigquery.Client(credentials=creds, project=config.BQ_PROJECT)
+
+
+def _parse_sa_json(sa_json):
+    """Parseia o JSON da service account vindo do st.secrets, tolerante ao
+    gotcha das aspas triplas duplas.
+
+    Se o secret foi colado com aspas triplas DUPLAS (\"\"\"), o TOML converte
+    os '\\n' da private_key em quebras de linha reais -> JSON inválido
+    (JSONDecodeError: Invalid control character). Com aspas triplas SIMPLES
+    (''') funciona direto. Aqui cobrimos os dois: se o json.loads direto
+    falhar, normalizamos as quebras reais dentro do campo private_key de
+    volta pra '\\n' (dois chars) e re-tentamos. Assim o secret funciona com
+    qualquer um dos dois formatos — não depende da Marina acertar o tipo de
+    aspas. Ver memória fase3-corridas-99-api.
+    """
+    if isinstance(sa_json, dict):
+        return sa_json  # já é um dict (st.secrets pode ter parseado)
+    try:
+        return json.loads(sa_json)
+    except json.JSONDecodeError:
+        # gotcha do \"\"\": private_key veio com quebras reais. Recoloca \\n.
+        import re
+        # pega o conteúdo entre "private_key": " ... " (inclusive o header/footer)
+        fixed = re.sub(
+            r'("private_key"\s*:\s*")(.*?)(")',
+            lambda m: m.group(1) + m.group(2).replace("\n", "\\n") + m.group(3),
+            sa_json, flags=re.DOTALL)
+        return json.loads(fixed)
 
 
 def _query_corridas_por_empresa(company_ids):
