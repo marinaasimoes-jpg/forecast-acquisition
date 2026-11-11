@@ -9,6 +9,7 @@ Três camadas independentes (spec 4.1): coleta (fetch_hubspot) → cálculo
 (calc_forecast) → renderização (aqui). Filtros/ordenação só mexem aqui.
 """
 import datetime as dt
+import logging
 
 import numpy as np
 import pandas as pd
@@ -941,10 +942,16 @@ def render_lente(lente, key_prefix):
         perf_por_deal, perf_mes_corr, perf_sem = fc99.performance_por_deal_bq(ramp)
     except Exception as e:
         perf_por_deal, perf_mes_corr, perf_sem = {}, None, []
-        import traceback
+        # Traceback completo só no log do servidor (operador vê; não vaza
+        # paths/credenciais pro browser). No browser só tipo + msg — já
+        # basta pra diagnosticar sem expor internals. Ver security review.
+        logging.getLogger(__name__).error(
+            "BigQuery indisponível em render_lente", exc_info=True)
         st.error(
             f"⚠ Acompanhamento indisponível — BigQuery não conectou.\n\n"
-            f"**{type(e).__name__}: {e}**\n\n```\n{traceback.format_exc()}\n```"
+            f"**{type(e).__name__}: {e}**\n\n"
+            f"_Traceback completo nos logs do Streamlit Cloud (Manage app → "
+            f"Logs). Ver memória fase3-corridas-99-api._"
         )
 
     # ---- self-check (spec 5) ---- roda antes de exibir
