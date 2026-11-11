@@ -941,7 +941,11 @@ def render_lente(lente, key_prefix):
         perf_por_deal, perf_mes_corr, perf_sem = fc99.performance_por_deal_bq(ramp)
     except Exception as e:
         perf_por_deal, perf_mes_corr, perf_sem = {}, None, []
-        st.caption(f"⚠ Acompanhamento indisponível ({type(e).__name__}).")
+        import traceback
+        st.error(
+            f"⚠ Acompanhamento indisponível — BigQuery não conectou.\n\n"
+            f"**{type(e).__name__}: {e}**\n\n```\n{traceback.format_exc()}\n```"
+        )
 
     # ---- self-check (spec 5) ---- roda antes de exibir
     checks = sc.run(neg, ativ, ramp, inc, meses, fetched_deals, hoje)
