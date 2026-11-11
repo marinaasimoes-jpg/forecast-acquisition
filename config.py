@@ -181,4 +181,7 @@ PATH_PLANILHA_PERFORMANCE = "data/Acompanhamento_Rampagem.xlsx"
 EXCECOES_MATCH_NOME = {
     "Voetur": "Grupo Voetur",
     # "Dellys": "Dellys Food Service",  # este casa por normalização, não precisa
+    "Sintetel": "Sintetel- Voucher",  # planilha "Sintetel" / deal "Sintetel- Voucher"
+    "Voll": "BTM (Voll)",  # planilha "Voll" / deal "BTM (Voll)" — ex.: Voll Log/Transportes
+    "Porto Seguro": "Porto Seguro Shopping LTDAPorto Seguro Shopping",
 }
