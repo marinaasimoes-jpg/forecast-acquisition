@@ -185,3 +185,32 @@ EXCECOES_MATCH_NOME = {
     "Voll": "BTM (Voll)",  # planilha "Voll" / deal "BTM (Voll)" — ex.: Voll Log/Transportes
     "Porto Seguro": "Porto Seguro Shopping LTDAPorto Seguro Shopping",
 }
+
+# ---- Realizado via BigQuery da 99/Didi (Fase 3) --------------------------
+# Fonte transacional real das corridas: BigQuery projeto brazil-mobility-482213,
+# dataset biztobiz_bm, tabela final_report (corrida-a-corrida, 2024-01..hoje).
+# Substitui a planilha manual (Fase 2) pela consulta direta. O dashboard.py
+# não muda — fetch_corridas_99 devolve o mesmo formato que fetch_performance.
+#
+# Credencial: service account JSON (NUNCA commitada — ver memória
+# forecast-acquisition-token-security). Local fora do repo, no Drive.
+BQ_CRED_PATH = (r"G:/Drives compartilhados/B2B Planning (Sales Ops & Intelligence)"
+                r"/4. Planning/Churn/Base de dados/credentials/"
+                r"brazil-mobility-482213-03dc3348d802.json")
+BQ_PROJECT = "brazil-mobility-482213"
+BQ_DATASET = "biztobiz_bm"
+BQ_TABLE = "final_report"
+
+# Tabela de tradução: dealname no HubSpot → [company_id na 99/Didi].
+# Curada manualmente (validada no BQ 2026-11-11). Os nomes no HubSpot são nome
+# fantasia; na 99 a razão social difere (Dellys↔OESA, Voetur↔Vip Service,
+# BTM↔Voll) — por isso o match é por ID, não por nome. Cresce quando novos
+# deals entram em rampagem: resolver o company_id via lookup no BQ
+# (company_name LIKE) e adicionar aqui. Ver memória fase3-corridas-99-api.
+DEAL_PARA_COMPANY_IDS_99 = {
+    "BTM (Voll)": [75099],          # "Voll" na 99 (15.354 corridas 2026)
+    "Porto Seguro Shopping LTDAPorto Seguro Shopping": [8215],  # "Porto Seguro"
+    "Grupo Voetur": [73349],        # "Vip Service" (subsidiária)
+    "Dellys Food Service": [74291], # "OESA COMERCIO E REPRESENTACOES S/A 10"
+    "Sintetel- Voucher": [68176],   # "SIND TELECOM SP" (volume baixo)
+}

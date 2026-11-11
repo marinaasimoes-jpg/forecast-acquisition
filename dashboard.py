@@ -19,6 +19,7 @@ import config
 import fetch_hubspot as fh
 import calc_forecast as cf
 import fetch_performance
+import fetch_corridas_99 as fc99
 import selfcheck as sc
 import theme
 
@@ -344,16 +345,17 @@ def _historico_rampagem_expander(sel, perf_por_deal, perf_mes_corr, dark, eh_15=
 
 
 def _sem_acompanhamento_expander(perf_sem, sel, dark):
-    """Expander com deals em rampa que não casaram com a planilha."""
+    """Expander com deals em rampa sem company_id da 99 mapeado (Fase 3)."""
     sel_ids = {d["deal_id"] for d in sel}
     sem = [d for d in perf_sem if d["deal_id"] in sel_ids]
     if not sem:
         return
-    with st.expander(f"⚠️ Deals sem acompanhamento na planilha ({len(sem)})",
-                     expanded=False):
-        st.markdown("_Estes deals estão em rampa no HubSpot mas não casaram com "
-                    "nenhuma empresa da planilha. Se devem ter acompanhamento, "
-                    "adicionar o mapeamento em `config.EXCECOES_MATCH_NOME`._")
+    with st.expander(f"⚠️ Deals sem acompanhamento ({len(sem)})", expanded=False):
+        st.markdown("_Estes deals estão em rampa no HubSpot mas não têm "
+                    "`company_id` da 99 mapeado em "
+                    "`config.DEAL_PARA_COMPANY_IDS_99`. Para acompanhar, "
+                    "resolver o company_id no BigQuery (lookup por "
+                    "`company_name`) e adicionar ali._")
         for d in sem:
             st.markdown(f"- **{d['dealname']}** (deal_id `{d['deal_id']}`)")
 
@@ -929,12 +931,14 @@ def render_lente(lente, key_prefix):
     neg, ativ, ramp, inc, meses, fetched_at, hoje, fetched_deals, \
         neg_15, ativ_15, ramp_15 = get_data()
 
-    # ---- acompanhamento (Fase 2): realizado da planilha ----
-    # Carrega uma vez; o realizado é o mesmo nas duas lentes (a meta muda).
+    # ---- acompanhamento (Fase 3): realizado direto do BigQuery da 99 ----
+    # Substitui a planilha manual (Fase 2). perf_por_deal/mes_corr/perf_sem
+    # têm o MESMO formato que fetch_performance.performance_por_deal devolvia,
+    # então o resto do render (expander histórico, sem-acompanhamento, % e
+    # Realizado) não muda. try/except: se o BQ cair no Cloud, o dashboard
+    # segue sem acompanhamento em vez de quebrar a página.
     try:
-        perf_regs = fetch_performance.ler_performance()
-        perf_por_deal, perf_mes_corr, perf_sem = fetch_performance.performance_por_deal(
-            ramp, perf_regs)
+        perf_por_deal, perf_mes_corr, perf_sem = fc99.performance_por_deal_bq(ramp)
     except Exception as e:
         perf_por_deal, perf_mes_corr, perf_sem = {}, None, []
         st.caption(f"⚠ Acompanhamento indisponível ({type(e).__name__}).")
